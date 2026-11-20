@@ -26,11 +26,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses > /dev/null || true
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
 
       - name: Restore debug keystore
         if: env.HAS_DEBUG_KEYSTORE == 'true'
@@ -64,4 +63,4 @@ jobs:
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_CREDENTIALS }}
           testers: ${{ secrets.FIREBASE_TESTER_EMAIL }}
           file: app/build/outputs/apk/debug/app-debug.apk
-          releaseNotes: "Build #${{ github.run_number }}: ${{ github.event.head_commit.message || 'Manual dispatch' }}"
+          releaseNotes: "NoDoomScroll Build #${{ github.run_number }}"
