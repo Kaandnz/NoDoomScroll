@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Vertical short-video / Reel frame -->
+    <path
+        android:fillColor="#22FFFFFF"
+        android:pathData="M45,31 H63 A7,7 0 0,1 70,38 V70 A7,7 0 0,1 63,77 H45 A7,7 0 0,1 38,70 V38 A7,7 0 0,1 45,31 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.6" />
+
+    <!-- Subtle top indicator bar -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M50,35.5 H58"
+        android:strokeColor="#66FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="2" />
+
+    <!-- Subtle bottom progress accents -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M44,71.5 H58"
+        android:strokeColor="#66FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M61,71.5 H64"
+        android:strokeColor="#44FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="2" />
+
+    <!-- Centered Play triangle -->
+    <path
+        android:fillColor="#FFE2F4FF"
+        android:pathData="M49,45.5 L62.5,54 L49,62.5 Z"
+        android:strokeColor="#FFE2F4FF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.2" />
+
+    <!-- Knockout break behind stop slash -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M33,33 L75,75"
+        android:strokeColor="#FF0F3E5D"
+        android:strokeLineCap="round"
+        android:strokeWidth="10" />
+
+    <!-- Coral-red diagonal stop slash -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M33,33 L75,75"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.4">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="75"
+                android:endY="75"
+                android:startX="33"
+                android:startY="33"
+                android:type="linear">
+                <item
+                    android:color="#FFFF6B6B"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FFFF3358"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+</vector>
