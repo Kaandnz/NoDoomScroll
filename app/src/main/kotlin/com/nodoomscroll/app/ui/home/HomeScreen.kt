@@ -59,6 +59,8 @@ fun HomeRoute(
     onToggleYouTubeShorts = viewModel::onToggleYouTubeShorts,
     onToggleInstagramReels = viewModel::onToggleInstagramReels,
     onToggleTikTok = viewModel::onToggleTikTok,
+    onToggleFacebookReels = viewModel::onToggleFacebookReels,
+    onToggleXShorts = viewModel::onToggleXShorts,
     onToggleDebugLogging = viewModel::onToggleDebugLogging,
     modifier = modifier,
   )
@@ -75,6 +77,8 @@ fun HomeScreen(
   onToggleYouTubeShorts: (Boolean) -> Unit,
   onToggleInstagramReels: (Boolean) -> Unit,
   onToggleTikTok: (Boolean) -> Unit,
+  onToggleFacebookReels: (Boolean) -> Unit,
+  onToggleXShorts: (Boolean) -> Unit,
   onToggleDebugLogging: (Boolean) -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -119,6 +123,20 @@ fun HomeScreen(
           subtitle = "TikTok açıldığında ana ekrana döndürür.",
           checked = uiState.settings.blockTikTok,
           onCheckedChange = onToggleTikTok,
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingToggleRow(
+          title = "Facebook Reels",
+          subtitle = "Ana akış açık kalır, sadece Facebook Reels/Shorts kapatılır.",
+          checked = uiState.settings.blockFacebookReels,
+          onCheckedChange = onToggleFacebookReels,
+        )
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        SettingToggleRow(
+          title = "X (Twitter) Shorts",
+          subtitle = "Ana akış açık kalır, sadece tam ekran dikey video akışı kapatılır.",
+          checked = uiState.settings.blockXShorts,
+          onCheckedChange = onToggleXShorts,
         )
       }
 
@@ -263,6 +281,8 @@ fun HomeScreenDisabledPreview() {
       onToggleYouTubeShorts = {},
       onToggleInstagramReels = {},
       onToggleTikTok = {},
+      onToggleFacebookReels = {},
+      onToggleXShorts = {},
       onToggleDebugLogging = {},
     )
   }
@@ -282,6 +302,8 @@ fun HomeScreenEnabledPreview() {
       onToggleYouTubeShorts = {},
       onToggleInstagramReels = {},
       onToggleTikTok = {},
+      onToggleFacebookReels = {},
+      onToggleXShorts = {},
       onToggleDebugLogging = {},
     )
   }

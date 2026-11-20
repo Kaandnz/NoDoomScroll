@@ -52,6 +52,8 @@ class HomeViewModelTest {
     viewModel.onToggleYouTubeShorts(false)
     viewModel.onToggleInstagramReels(false)
     viewModel.onToggleTikTok(false)
+    viewModel.onToggleFacebookReels(false)
+    viewModel.onToggleXShorts(false)
     viewModel.onToggleDebugLogging(true)
 
     val expected =
@@ -59,6 +61,8 @@ class HomeViewModelTest {
         blockYouTubeShorts = false,
         blockInstagramReels = false,
         blockTikTok = false,
+        blockFacebookReels = false,
+        blockXShorts = false,
         debugLoggingEnabled = true,
       )
     assertEquals(expected, repo.currentSettings())
@@ -99,6 +103,14 @@ private class FakeSettingsRepository(
 
   override fun setBlockTikTok(enabled: Boolean) {
     _settings.update { it.copy(blockTikTok = enabled) }
+  }
+
+  override fun setBlockFacebookReels(enabled: Boolean) {
+    _settings.update { it.copy(blockFacebookReels = enabled) }
+  }
+
+  override fun setBlockXShorts(enabled: Boolean) {
+    _settings.update { it.copy(blockXShorts = enabled) }
   }
 
   override fun setDebugLoggingEnabled(enabled: Boolean) {

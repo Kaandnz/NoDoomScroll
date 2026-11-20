@@ -7,5 +7,7 @@ data class BlockerSettings(
   val blockYouTubeShorts: Boolean = true,
   val blockInstagramReels: Boolean = true,
   val blockTikTok: Boolean = true,
+  val blockFacebookReels: Boolean = true,
+  val blockXShorts: Boolean = true,
   val debugLoggingEnabled: Boolean = false,
 )

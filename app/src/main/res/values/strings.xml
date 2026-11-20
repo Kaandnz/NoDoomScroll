@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">NoDoomScroll</string>
     <string name="accessibility_service_label">NoDoomScroll Koruma Servisi</string>
-    <string name="accessibility_service_description">YouTube Shorts, Instagram Reels ve TikTok akışlarını algılayıp engellemek için yalnızca bu uygulamalardaki ekran yapısını kontrol eder. Kişisel veri toplamaz.</string>
+    <string name="accessibility_service_description">YouTube Shorts, Instagram Reels, TikTok, Facebook Reels ve X Shorts akışlarını algılayıp engellemek için yalnızca bu uygulamalardaki ekran yapısını kontrol eder. Kişisel veri toplamaz.</string>
 </resources>

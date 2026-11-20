@@ -181,6 +181,158 @@ class DoomScrollRuleEngineTest {
   }
 
   @Test
+  fun facebookReels_exactViewerId_triggersNavigateBack() {
+    val snapshot =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        visibleViewIds = setOf("com.facebook.katana:id/fb_shorts_viewer_container"),
+      )
+
+    val decision = engine.evaluate(snapshot, BlockerSettings(blockFacebookReels = true))
+
+    assertEquals(BlockAction.NAVIGATE_BACK, decision.action)
+    assertEquals(Platform.FACEBOOK_REELS, decision.platform)
+    assertTrue(decision.reason.contains("fb_shorts_viewer_container"))
+  }
+
+  @Test
+  fun facebookReels_dynamicKeywordTriggers_whileHomeFeedShelfIsIgnored() {
+    val homeFeedShelf =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        visibleViewIds = setOf("com.facebook.katana:id/fb_shorts_tofu_unit"),
+      )
+    assertEquals(BlockAction.NONE, engine.evaluate(homeFeedShelf, BlockerSettings()).action)
+
+    val dynamicViewer =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        visibleViewIds = setOf("com.facebook.katana:id/custom_fb_shorts_player_v2"),
+      )
+    val decision = engine.evaluate(dynamicViewer, BlockerSettings(blockFacebookReels = true))
+    assertEquals(BlockAction.NAVIGATE_BACK, decision.action)
+    assertEquals(Platform.FACEBOOK_REELS, decision.platform)
+    assertTrue(decision.reason.startsWith("viewIdKeyword:"))
+  }
+
+  @Test
+  fun facebookReels_windowClassTabHintLiteAndDisabled() {
+    val windowClassMatch =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        windowClassName = "com.facebook.fbshorts.viewer.FbShortsViewerActivity",
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, engine.evaluate(windowClassMatch, BlockerSettings()).action)
+
+    fakeNowMs += 1200L
+    val liteTabMatch =
+      ScreenSnapshot(
+        packageName = "com.facebook.lite",
+        selectedTabHints = setOf(FacebookReelsRule.REELS_TAB_SELECTED_HINT),
+      )
+    val liteDecision = engine.evaluate(liteTabMatch, BlockerSettings(blockFacebookReels = true))
+    assertEquals(BlockAction.NAVIGATE_BACK, liteDecision.action)
+    assertEquals(Platform.FACEBOOK_REELS, liteDecision.platform)
+
+    fakeNowMs += 1200L
+    assertEquals(
+      BlockAction.NONE,
+      engine.evaluate(windowClassMatch, BlockerSettings(blockFacebookReels = false)).action,
+    )
+  }
+
+  @Test
+  fun xShorts_immersiveIdsWindowClassTabHint_triggerNavigateBack_whileTimelineVideoIsIgnored() {
+    val timelineInlineVideo =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("com.twitter.android:id/video_player"),
+      )
+    assertEquals(BlockAction.NONE, engine.evaluate(timelineInlineVideo, BlockerSettings()).action)
+
+    val immersiveId =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("com.twitter.android:id/immersive_video_container"),
+      )
+    val idDecision = engine.evaluate(immersiveId, BlockerSettings(blockXShorts = true))
+    assertEquals(BlockAction.NAVIGATE_BACK, idDecision.action)
+    assertEquals(Platform.X_SHORTS, idDecision.platform)
+
+    fakeNowMs += 1200L
+    val keywordMatch =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("com.twitter.android:id/explore_immersive_feed"),
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, engine.evaluate(keywordMatch, BlockerSettings()).action)
+
+    fakeNowMs += 1200L
+    val windowClassMatch =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        windowClassName = "com.twitter.explore.immersive.ImmersiveVideoActivity",
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, engine.evaluate(windowClassMatch, BlockerSettings()).action)
+
+    fakeNowMs += 1200L
+    val tabMatch =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        selectedTabHints = setOf(XShortsRule.VIDEO_TAB_SELECTED_HINT),
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, engine.evaluate(tabMatch, BlockerSettings()).action)
+
+    fakeNowMs += 1200L
+    assertEquals(
+      BlockAction.NONE,
+      engine.evaluate(immersiveId, BlockerSettings(blockXShorts = false)).action,
+    )
+  }
+
+  @Test
+  fun xShorts_liveComposeTags_triggerNavigateBack_whileMainPostDetailAndGalleryStayOpen() {
+    val homeTimeline =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("MainLanding", "scaffold_home_tabbed", "timeline_post"),
+      )
+    val postDetail =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("PostDetail", "timeline_post"),
+      )
+    val mediaGallery =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("MediaGallery", "GalleryActionBar"),
+      )
+
+    assertEquals(BlockAction.NONE, engine.evaluate(homeTimeline, BlockerSettings()).action)
+    assertEquals(BlockAction.NONE, engine.evaluate(postDetail, BlockerSettings()).action)
+    assertEquals(BlockAction.NONE, engine.evaluate(mediaGallery, BlockerSettings()).action)
+
+    val videoTabAndImmersive =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("VideoTab", "ImmersiveVideo"),
+      )
+    val tabDecision = engine.evaluate(videoTabAndImmersive, BlockerSettings(blockXShorts = true))
+    assertEquals(BlockAction.NAVIGATE_BACK, tabDecision.action)
+    assertEquals(Platform.X_SHORTS, tabDecision.platform)
+
+    fakeNowMs += 1200L
+    val immersiveOnly =
+      ScreenSnapshot(
+        packageName = "com.twitter.android",
+        visibleViewIds = setOf("ImmersiveVideo"),
+      )
+    val immersiveDecision = engine.evaluate(immersiveOnly, BlockerSettings(blockXShorts = true))
+    assertEquals(BlockAction.NAVIGATE_BACK, immersiveDecision.action)
+    assertEquals(Platform.X_SHORTS, immersiveDecision.platform)
+  }
+
+  @Test
   fun cooldownGate_directResetAllowsImmediateAcquire() {
     assertTrue(cooldownGate.tryAcquire(Platform.TIKTOK))
     assertFalse(cooldownGate.tryAcquire(Platform.TIKTOK))

@@ -7,6 +7,8 @@ enum class Platform {
   YOUTUBE_SHORTS,
   INSTAGRAM_REELS,
   TIKTOK,
+  FACEBOOK_REELS,
+  X_SHORTS,
 }
 
 /**
@@ -25,6 +27,7 @@ data class ScreenSnapshot(
   val packageName: String,
   val visibleViewIds: Set<String> = emptySet(),
   val selectedTabHints: Set<String> = emptySet(),
+  val windowClassName: String = "",
 )
 
 /**

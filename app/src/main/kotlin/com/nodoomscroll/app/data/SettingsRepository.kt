@@ -20,6 +20,10 @@ interface SettingsRepository {
 
   fun setBlockTikTok(enabled: Boolean)
 
+  fun setBlockFacebookReels(enabled: Boolean)
+
+  fun setBlockXShorts(enabled: Boolean)
+
   fun setDebugLoggingEnabled(enabled: Boolean)
 }
 
@@ -61,6 +65,14 @@ class SharedPreferencesSettingsRepository(
     updateBoolean(KEY_BLOCK_TIKTOK, enabled)
   }
 
+  override fun setBlockFacebookReels(enabled: Boolean) {
+    updateBoolean(KEY_BLOCK_FACEBOOK_REELS, enabled)
+  }
+
+  override fun setBlockXShorts(enabled: Boolean) {
+    updateBoolean(KEY_BLOCK_X_SHORTS, enabled)
+  }
+
   override fun setDebugLoggingEnabled(enabled: Boolean) {
     updateBoolean(KEY_DEBUG_LOGGING_ENABLED, enabled)
   }
@@ -75,6 +87,8 @@ class SharedPreferencesSettingsRepository(
       blockYouTubeShorts = prefs.getBoolean(KEY_BLOCK_YOUTUBE_SHORTS, true),
       blockInstagramReels = prefs.getBoolean(KEY_BLOCK_INSTAGRAM_REELS, true),
       blockTikTok = prefs.getBoolean(KEY_BLOCK_TIKTOK, true),
+      blockFacebookReels = prefs.getBoolean(KEY_BLOCK_FACEBOOK_REELS, true),
+      blockXShorts = prefs.getBoolean(KEY_BLOCK_X_SHORTS, true),
       debugLoggingEnabled = prefs.getBoolean(KEY_DEBUG_LOGGING_ENABLED, false),
     )
 
@@ -83,6 +97,8 @@ class SharedPreferencesSettingsRepository(
     private const val KEY_BLOCK_YOUTUBE_SHORTS = "block_youtube_shorts"
     private const val KEY_BLOCK_INSTAGRAM_REELS = "block_instagram_reels"
     private const val KEY_BLOCK_TIKTOK = "block_tiktok"
+    private const val KEY_BLOCK_FACEBOOK_REELS = "block_facebook_reels"
+    private const val KEY_BLOCK_X_SHORTS = "block_x_shorts"
     private const val KEY_DEBUG_LOGGING_ENABLED = "debug_logging_enabled"
 
     @Volatile

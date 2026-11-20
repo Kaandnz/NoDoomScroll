@@ -63,6 +63,14 @@ class HomeViewModel(
     settingsRepository.setBlockTikTok(enabled)
   }
 
+  fun onToggleFacebookReels(enabled: Boolean) {
+    settingsRepository.setBlockFacebookReels(enabled)
+  }
+
+  fun onToggleXShorts(enabled: Boolean) {
+    settingsRepository.setBlockXShorts(enabled)
+  }
+
   fun onToggleDebugLogging(enabled: Boolean) {
     settingsRepository.setDebugLoggingEnabled(enabled)
   }

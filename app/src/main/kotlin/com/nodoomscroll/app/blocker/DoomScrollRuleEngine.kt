@@ -34,6 +34,8 @@ class DoomScrollRuleEngine(
         YouTubeShortsRule,
         InstagramReelsRule,
         TikTokRule,
+        FacebookReelsRule,
+        XShortsRule,
       )
   }
 }

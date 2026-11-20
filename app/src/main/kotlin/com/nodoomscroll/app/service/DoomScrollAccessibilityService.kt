@@ -9,8 +9,10 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.nodoomscroll.app.blocker.BlockAction
 import com.nodoomscroll.app.blocker.BlockRule
 import com.nodoomscroll.app.blocker.DoomScrollRuleEngine
+import com.nodoomscroll.app.blocker.FacebookReelsRule
 import com.nodoomscroll.app.blocker.InstagramReelsRule
 import com.nodoomscroll.app.blocker.ScreenSnapshot
+import com.nodoomscroll.app.blocker.XShortsRule
 import com.nodoomscroll.app.data.SettingsRepository
 import com.nodoomscroll.app.data.SharedPreferencesSettingsRepository
 
@@ -22,6 +24,8 @@ class DoomScrollAccessibilityService : AccessibilityService() {
   private lateinit var settingsRepository: SettingsRepository
   private val ruleEngine = DoomScrollRuleEngine()
   private var lastDebugLogUptimeMs: Long = 0L
+  private var lastWindowPackage: String = ""
+  private var lastWindowClassName: String = ""
 
   override fun onServiceConnected() {
     super.onServiceConnected()
@@ -35,10 +39,22 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       settingsRepository = SharedPreferencesSettingsRepository.getInstance(applicationContext)
     }
 
+    val activeRoot = rootInActiveWindow
     val packageName =
-      event?.packageName?.toString()
-        ?: rootInActiveWindow?.packageName?.toString()
+      activeRoot?.packageName?.toString()
+        ?: event?.packageName?.toString()
         ?: return
+
+    if (packageName != lastWindowPackage) {
+      lastWindowPackage = packageName
+      lastWindowClassName = ""
+    }
+    if (
+      event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+        (event.packageName == null || event.packageName.toString() == packageName)
+    ) {
+      lastWindowClassName = event.className?.toString().orEmpty()
+    }
 
     if (packageName !in ruleEngine.watchedPackages) return
 
@@ -46,7 +62,14 @@ class DoomScrollAccessibilityService : AccessibilityService() {
     val matchingRules = ruleEngine.rulesForPackage(packageName)
     if (matchingRules.none { it.isEnabled(settings) } && !settings.debugLoggingEnabled) return
 
-    val snapshot = buildSnapshot(packageName, matchingRules, event, settings.debugLoggingEnabled)
+    val snapshot =
+      buildSnapshot(
+        packageName = packageName,
+        matchingRules = matchingRules,
+        event = event,
+        activeRoot = activeRoot,
+        debugLoggingEnabled = settings.debugLoggingEnabled,
+      )
     val decision = ruleEngine.evaluate(snapshot, settings)
 
     when (decision.action) {
@@ -81,43 +104,65 @@ class DoomScrollAccessibilityService : AccessibilityService() {
     packageName: String,
     matchingRules: List<BlockRule>,
     event: AccessibilityEvent?,
+    activeRoot: AccessibilityNodeInfo?,
     debugLoggingEnabled: Boolean,
   ): ScreenSnapshot {
     val candidateIds = matchingRules.flatMapTo(linkedSetOf()) { it.candidateViewIds }
+    val needsTreeScan = matchingRules.any { it.requiresTreeScan } || debugLoggingEnabled
     val needsRoot =
       candidateIds.isNotEmpty() ||
         packageName == INSTAGRAM_PACKAGE ||
-        debugLoggingEnabled
+        needsTreeScan
 
     if (!needsRoot) {
-      return ScreenSnapshot(packageName = packageName)
+      return ScreenSnapshot(
+        packageName = packageName,
+        windowClassName = lastWindowClassName,
+      )
     }
 
-    val root = rootInActiveWindow ?: event?.source
+    val root = activeRoot ?: event?.source
     val visibleViewIds =
       if (root == null) {
-        emptySet()
+        linkedSetOf()
       } else {
         candidateIds.filterTo(linkedSetOf()) { viewId ->
           hasVisibleNode(root, viewId)
         }
       }
 
-    val selectedTabHints =
-      if (root != null && packageName == INSTAGRAM_PACKAGE && isClipsTabSelected(root)) {
-        setOf(InstagramReelsRule.CLIPS_TAB_SELECTED_HINT)
+    val selectedTabHints = linkedSetOf<String>()
+    if (root != null && packageName == INSTAGRAM_PACKAGE && isClipsTabSelected(root)) {
+      selectedTabHints.add(InstagramReelsRule.CLIPS_TAB_SELECTED_HINT)
+    }
+
+    val scanResult =
+      if (root != null && needsTreeScan) {
+        scanVisibleWindow(root = root, packageName = packageName)
       } else {
-        emptySet()
+        null
       }
 
+    if (scanResult != null) {
+      visibleViewIds.addAll(scanResult.visibleIds)
+      selectedTabHints.addAll(scanResult.selectedTabHints)
+    }
+
     if (debugLoggingEnabled) {
-      logDebugInspection(packageName, event, root, selectedTabHints)
+      logDebugInspection(
+        packageName = packageName,
+        event = event,
+        visibleIds = scanResult?.visibleIds ?: visibleViewIds.toList(),
+        selectedTabHints = selectedTabHints,
+        selectedLabels = scanResult?.selectedLabels.orEmpty(),
+      )
     }
 
     return ScreenSnapshot(
       packageName = packageName,
       visibleViewIds = visibleViewIds,
       selectedTabHints = selectedTabHints,
+      windowClassName = lastWindowClassName,
     )
   }
 
@@ -134,40 +179,55 @@ class DoomScrollAccessibilityService : AccessibilityService() {
   private fun logDebugInspection(
     packageName: String,
     event: AccessibilityEvent?,
-    root: AccessibilityNodeInfo?,
+    visibleIds: List<String>,
     selectedTabHints: Set<String>,
+    selectedLabels: List<String>,
   ) {
     val now = SystemClock.uptimeMillis()
     if (now - lastDebugLogUptimeMs < DEBUG_LOG_INTERVAL_MS) return
     lastDebugLogUptimeMs = now
 
-    val ids = collectVisibleViewIds(root)
     Log.d(
       TAG,
-      "Inspect pkg=$packageName event=${event?.eventType} visibleIds=$ids selectedHints=$selectedTabHints",
+      "Inspect pkg=$packageName cls=$lastWindowClassName event=${event?.eventType} " +
+        "visibleIds=$visibleIds selectedLabels=$selectedLabels selectedHints=$selectedTabHints",
     )
   }
 
-  private fun collectVisibleViewIds(
-    root: AccessibilityNodeInfo?,
+  private fun scanVisibleWindow(
+    root: AccessibilityNodeInfo,
+    packageName: String,
     maxDepth: Int = 12,
     maxNodes: Int = 120,
     maxIds: Int = 40,
-  ): List<String> {
-    if (root == null) return emptyList()
-
+    maxSelectedLabels: Int = 10,
+  ): WindowScanResult {
     val collectedIds = linkedSetOf<String>()
+    val selectedTabHints = linkedSetOf<String>()
+    val selectedLabels = linkedSetOf<String>()
     val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
     queue.addLast(root to 0)
     var visitedNodes = 0
 
-    while (queue.isNotEmpty() && visitedNodes < maxNodes && collectedIds.size < maxIds) {
+    while (queue.isNotEmpty() && visitedNodes < maxNodes) {
       val (node, depth) = queue.removeFirst()
       visitedNodes++
 
-      val resourceName = node.viewIdResourceName
-      if (!resourceName.isNullOrBlank() && node.isVisibleToUser) {
-        collectedIds.add(resourceName)
+      val isVisible = node.isVisibleToUser
+      if (isVisible) {
+        val resourceName = node.viewIdResourceName
+        if (!resourceName.isNullOrBlank() && collectedIds.size < maxIds) {
+          collectedIds.add(resourceName)
+        }
+        if (node.isSelected) {
+          collectSelectedTabSignals(
+            node = node,
+            packageName = packageName,
+            selectedLabels = selectedLabels,
+            selectedTabHints = selectedTabHints,
+            maxSelectedLabels = maxSelectedLabels,
+          )
+        }
       }
 
       if (depth >= maxDepth) continue
@@ -177,13 +237,67 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       }
     }
 
-    return collectedIds.toList()
+    return WindowScanResult(
+      visibleIds = collectedIds.toList(),
+      selectedTabHints = selectedTabHints,
+      selectedLabels = selectedLabels.toList(),
+    )
   }
+
+  private fun collectSelectedTabSignals(
+    node: AccessibilityNodeInfo,
+    packageName: String,
+    selectedLabels: MutableSet<String>,
+    selectedTabHints: MutableSet<String>,
+    maxSelectedLabels: Int,
+  ) {
+    val rawCandidates = listOfNotNull(node.contentDescription?.toString(), node.text?.toString())
+    for (raw in rawCandidates) {
+      val trimmed = raw.trim()
+      if (trimmed.isEmpty() || trimmed.length > MAX_TAB_LABEL_LENGTH) continue
+
+      if (selectedLabels.size < maxSelectedLabels) {
+        selectedLabels.add(trimmed)
+      }
+
+      val normalized = trimmed.lowercase()
+      when (packageName) {
+        in FacebookReelsRule.supportedPackages -> {
+          if (
+            normalized == "reels" ||
+              normalized.startsWith("reels,") ||
+              normalized.startsWith("reels ")
+          ) {
+            selectedTabHints.add(FacebookReelsRule.REELS_TAB_SELECTED_HINT)
+          }
+        }
+        in XShortsRule.supportedPackages -> {
+          if (
+            normalized in X_VIDEO_TAB_LABELS ||
+              normalized.startsWith("video,") ||
+              normalized.startsWith("videos,") ||
+              normalized.startsWith("videolar,")
+          ) {
+            selectedTabHints.add(XShortsRule.VIDEO_TAB_SELECTED_HINT)
+          }
+        }
+      }
+    }
+  }
+
+  private data class WindowScanResult(
+    val visibleIds: List<String>,
+    val selectedTabHints: Set<String>,
+    val selectedLabels: List<String>,
+  )
 
   companion object {
     const val TAG: String = "NoDoomScroll"
     private const val INSTAGRAM_PACKAGE: String = "com.instagram.android"
     private const val DEBUG_LOG_INTERVAL_MS: Long = 1500L
+    private const val MAX_TAB_LABEL_LENGTH: Int = 30
+    private val X_VIDEO_TAB_LABELS: Set<String> =
+      setOf("video", "videos", "videolar", "video tab", "videolar sekmesi")
 
     @Volatile
     var isConnected: Boolean = false
