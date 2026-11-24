@@ -242,6 +242,40 @@ class DoomScrollRuleEngineTest {
   }
 
   @Test
+  fun facebookReels_expandedViewIdsAndSignals_ignoreFeedPreviewIds() {
+    val inFeedPreview =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        visibleViewIds = setOf("com.facebook.katana:id/fb_shorts_video_preview_card"),
+      )
+    assertEquals(BlockAction.NONE, engine.evaluate(inFeedPreview, BlockerSettings()).action)
+
+    val overlayViewer =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        visibleViewIds = setOf("com.facebook.katana:id/reels_overlay_root"),
+      )
+    val overlayDecision = engine.evaluate(overlayViewer, BlockerSettings())
+    assertEquals(BlockAction.NAVIGATE_BACK, overlayDecision.action)
+    assertEquals(Platform.FACEBOOK_REELS, overlayDecision.platform)
+
+    fakeNowMs += 1200L
+    val signalViewer =
+      ScreenSnapshot(
+        packageName = "com.facebook.katana",
+        facebookViewerSignals =
+          FacebookViewerSignals(
+            hasMainFeedTabBar = false,
+            hasVerticalRightActionRail = true,
+            hasPlayerOrEngagementControl = true,
+          ),
+      )
+    val signalDecision = engine.evaluate(signalViewer, BlockerSettings())
+    assertEquals(BlockAction.NAVIGATE_BACK, signalDecision.action)
+    assertEquals("facebook:verticalRightRail", signalDecision.reason)
+  }
+
+  @Test
   fun xShorts_immersiveIdsWindowClassTabHint_triggerNavigateBack_whileTimelineVideoIsIgnored() {
     val timelineInlineVideo =
       ScreenSnapshot(

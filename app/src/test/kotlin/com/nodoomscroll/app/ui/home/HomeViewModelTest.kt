@@ -1,7 +1,11 @@
 package com.nodoomscroll.app.ui.home
 
 import com.nodoomscroll.app.data.BlockerSettings
+import com.nodoomscroll.app.data.ProtectionStats
+import com.nodoomscroll.app.data.ScrollGuardAction
+import com.nodoomscroll.app.data.ScrollGuardSensitivity
 import com.nodoomscroll.app.data.SettingsRepository
+import com.nodoomscroll.app.data.StatsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +31,7 @@ class HomeViewModelTest {
   val mainDispatcherRule = MainDispatcherRule()
 
   @Test
-  fun initialState_reflectsRepositoryAndServiceStatus() {
+  fun initialState_reflectsRepositoryServiceStatusAndStats() {
     val repo =
       FakeSettingsRepository(
         BlockerSettings(
@@ -37,17 +41,38 @@ class HomeViewModelTest {
           debugLoggingEnabled = true,
         ),
       )
+    val statsRepo =
+      FakeStatsRepository(
+        ProtectionStats(
+          dateKey = "2026-11-24",
+          todayShortVideoBlocks = 3,
+          todayScrollBreaks = 1,
+          totalBlocksAllTime = 12,
+        ),
+      )
 
-    val viewModel = HomeViewModel(settingsRepository = repo, serviceEnabledProvider = { true })
+    val viewModel =
+      HomeViewModel(
+        settingsRepository = repo,
+        statsRepository = statsRepo,
+        serviceEnabledProvider = { true },
+      )
 
     assertTrue(viewModel.uiState.value.isServiceEnabled)
     assertEquals(repo.currentSettings(), viewModel.uiState.value.settings)
+    assertEquals(statsRepo.currentStats(), viewModel.uiState.value.stats)
   }
 
   @Test
   fun toggleCallbacks_updateRepositoryAndUiState() {
     val repo = FakeSettingsRepository()
-    val viewModel = HomeViewModel(settingsRepository = repo, serviceEnabledProvider = { false })
+    val statsRepo = FakeStatsRepository()
+    val viewModel =
+      HomeViewModel(
+        settingsRepository = repo,
+        statsRepository = statsRepo,
+        serviceEnabledProvider = { false },
+      )
 
     viewModel.onToggleYouTubeShorts(false)
     viewModel.onToggleInstagramReels(false)
@@ -55,6 +80,9 @@ class HomeViewModelTest {
     viewModel.onToggleFacebookReels(false)
     viewModel.onToggleXShorts(false)
     viewModel.onToggleDebugLogging(true)
+    viewModel.onToggleContinuousScrollGuard(false)
+    viewModel.onSelectScrollGuardSensitivity(ScrollGuardSensitivity.STRICT)
+    viewModel.onSelectScrollGuardAction(ScrollGuardAction.NAVIGATE_HOME)
 
     val expected =
       BlockerSettings(
@@ -64,23 +92,38 @@ class HomeViewModelTest {
         blockFacebookReels = false,
         blockXShorts = false,
         debugLoggingEnabled = true,
+        continuousScrollGuardEnabled = false,
+        scrollGuardSensitivity = ScrollGuardSensitivity.STRICT,
+        scrollGuardAction = ScrollGuardAction.NAVIGATE_HOME,
       )
     assertEquals(expected, repo.currentSettings())
     assertEquals(expected, viewModel.uiState.value.settings)
   }
 
   @Test
-  fun refreshServiceStatus_updatesIsServiceEnabled() {
+  fun refreshServiceStatus_updatesIsServiceEnabledAndRefreshesStatsDate() {
     var serviceEnabled = false
     val repo = FakeSettingsRepository()
-    val viewModel = HomeViewModel(settingsRepository = repo, serviceEnabledProvider = { serviceEnabled })
+    val statsRepo = FakeStatsRepository()
+    val viewModel =
+      HomeViewModel(
+        settingsRepository = repo,
+        statsRepository = statsRepo,
+        serviceEnabledProvider = { serviceEnabled },
+      )
 
     assertFalse(viewModel.uiState.value.isServiceEnabled)
 
     serviceEnabled = true
+    statsRepo.recordShortVideoBlock()
+    statsRepo.recordScrollBreak()
     viewModel.refreshServiceStatus()
 
     assertTrue(viewModel.uiState.value.isServiceEnabled)
+    assertTrue(statsRepo.refreshCalled)
+    assertEquals(1, viewModel.uiState.value.stats.todayShortVideoBlocks)
+    assertEquals(1, viewModel.uiState.value.stats.todayScrollBreaks)
+    assertEquals(2, viewModel.uiState.value.stats.todayTotal)
   }
 }
 
@@ -115,6 +158,51 @@ private class FakeSettingsRepository(
 
   override fun setDebugLoggingEnabled(enabled: Boolean) {
     _settings.update { it.copy(debugLoggingEnabled = enabled) }
+  }
+
+  override fun setContinuousScrollGuardEnabled(enabled: Boolean) {
+    _settings.update { it.copy(continuousScrollGuardEnabled = enabled) }
+  }
+
+  override fun setScrollGuardSensitivity(sensitivity: ScrollGuardSensitivity) {
+    _settings.update { it.copy(scrollGuardSensitivity = sensitivity) }
+  }
+
+  override fun setScrollGuardAction(action: ScrollGuardAction) {
+    _settings.update { it.copy(scrollGuardAction = action) }
+  }
+}
+
+private class FakeStatsRepository(
+  initial: ProtectionStats = ProtectionStats(dateKey = "2026-11-24"),
+) : StatsRepository {
+
+  private val _stats = MutableStateFlow(initial)
+  override val stats: StateFlow<ProtectionStats> = _stats.asStateFlow()
+  var refreshCalled: Boolean = false
+
+  override fun currentStats(): ProtectionStats = _stats.value
+
+  override fun recordShortVideoBlock() {
+    _stats.update {
+      it.copy(
+        todayShortVideoBlocks = it.todayShortVideoBlocks + 1,
+        totalBlocksAllTime = it.totalBlocksAllTime + 1,
+      )
+    }
+  }
+
+  override fun recordScrollBreak() {
+    _stats.update {
+      it.copy(
+        todayScrollBreaks = it.todayScrollBreaks + 1,
+        totalBlocksAllTime = it.totalBlocksAllTime + 1,
+      )
+    }
+  }
+
+  override fun refreshIfDateChanged() {
+    refreshCalled = true
   }
 }
 

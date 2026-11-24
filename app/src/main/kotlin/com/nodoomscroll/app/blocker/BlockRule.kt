@@ -109,7 +109,7 @@ object TikTokRule : BlockRule {
 }
 
 /**
- * Blocks Facebook Reels/Shorts viewers without blocking News Feed posts or home Reels shelves.
+ * Blocks Facebook Reels/Shorts viewers without blocking News Feed posts, Stories, Profiles, or home Reels shelves.
  */
 object FacebookReelsRule : BlockRule {
   const val REELS_TAB_SELECTED_HINT: String = "facebook_reels_tab_selected"
@@ -125,16 +125,46 @@ object FacebookReelsRule : BlockRule {
       "com.facebook.katana:id/fb_shorts_pager",
       "com.facebook.katana:id/reels_viewer_container",
       "com.facebook.katana:id/reels_player_container",
+      "com.facebook.lite:id/fb_shorts_viewer_container",
+      "com.facebook.lite:id/reels_viewer_container",
     )
 
   private val viewIdKeywords: List<String> =
-    listOf("fb_shorts_viewer", "fb_shorts_pager", "fb_shorts_player", "reels_viewer", "reels_player")
-  private val excludedFeedKeywords: List<String> = listOf("tofu", "shelf", "tray", "unit")
-  private val windowClassKeywords: List<String> = listOf("fbshortsviewer", "reelsviewer")
+    listOf(
+      "fb_shorts_viewer",
+      "fb_shorts_pager",
+      "fb_shorts_player",
+      "fb_shorts_video",
+      "fb_shorts_overlay",
+      "fb_shorts_ufi",
+      "fb_shorts_root",
+      "fb_shorts_fragment",
+      "reels_viewer",
+      "reels_player",
+      "reels_pager",
+      "reels_overlay",
+      "reels_ufi",
+      "short_form_video",
+    )
+  private val excludedFeedKeywords: List<String> =
+    listOf(
+      "tofu",
+      "shelf",
+      "tray",
+      "unit",
+      "preview",
+      "carousel",
+      "in_feed",
+      "feed_unit",
+      "card",
+      "tile",
+    )
+  private val windowClassKeywords: List<String> =
+    listOf("fbshortsviewer", "reelsviewer", "fbshorts", "reelsplayer", "shortformvideo")
 
   override fun isEnabled(settings: BlockerSettings): Boolean = settings.blockFacebookReels
 
-  override fun evaluate(snapshot: ScreenSnapshot): BlockDecision? =
+  override fun evaluate(snapshot: ScreenSnapshot): BlockDecision? {
     evaluateViewerMatch(
       snapshot = snapshot,
       platform = platform,
@@ -144,7 +174,53 @@ object FacebookReelsRule : BlockRule {
       excludedViewIdKeywords = excludedFeedKeywords,
       windowClassKeywords = windowClassKeywords,
       selectedTabHint = REELS_TAB_SELECTED_HINT,
-    )
+    )?.let { return it }
+
+    val signals = snapshot.facebookViewerSignals
+    if (signals.hasMainFeedTabBar) return null
+
+    if (signals.hasVerticalRightActionRail) {
+      return BlockDecision(
+        action = BlockAction.NAVIGATE_BACK,
+        platform = platform,
+        reason = "facebook:verticalRightRail",
+      )
+    }
+
+    if (signals.hasProfileSubTabs) return null
+
+    val explicitLabel = signals.explicitReelViewerLabels.firstOrNull()
+    if (explicitLabel != null) {
+      return BlockDecision(
+        action = BlockAction.NAVIGATE_BACK,
+        platform = platform,
+        reason = "facebook:explicitLabel:$explicitLabel",
+      )
+    }
+
+    val primarySupporting = signals.supportingReelLabels - "top_camera"
+    if (
+      signals.supportingReelLabels.size >= 2 &&
+        primarySupporting.isNotEmpty() &&
+        signals.hasPlayerOrEngagementControl
+    ) {
+      return BlockDecision(
+        action = BlockAction.NAVIGATE_BACK,
+        platform = platform,
+        reason = "facebook:viewerSignals:${signals.supportingReelLabels.sorted().joinToString("+")}",
+      )
+    }
+
+    if (signals.recentFeedReelClick && signals.hasPlayerOrEngagementControl) {
+      return BlockDecision(
+        action = BlockAction.NAVIGATE_BACK,
+        platform = platform,
+        reason = "facebook:feedReelClick",
+      )
+    }
+
+    return null
+  }
 }
 
 /**

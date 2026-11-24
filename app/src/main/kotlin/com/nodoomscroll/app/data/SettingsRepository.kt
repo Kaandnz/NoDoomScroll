@@ -25,6 +25,12 @@ interface SettingsRepository {
   fun setBlockXShorts(enabled: Boolean)
 
   fun setDebugLoggingEnabled(enabled: Boolean)
+
+  fun setContinuousScrollGuardEnabled(enabled: Boolean)
+
+  fun setScrollGuardSensitivity(sensitivity: ScrollGuardSensitivity)
+
+  fun setScrollGuardAction(action: ScrollGuardAction)
 }
 
 /**
@@ -77,20 +83,53 @@ class SharedPreferencesSettingsRepository(
     updateBoolean(KEY_DEBUG_LOGGING_ENABLED, enabled)
   }
 
+  override fun setContinuousScrollGuardEnabled(enabled: Boolean) {
+    updateBoolean(KEY_CONTINUOUS_SCROLL_GUARD_ENABLED, enabled)
+  }
+
+  override fun setScrollGuardSensitivity(sensitivity: ScrollGuardSensitivity) {
+    updateString(KEY_SCROLL_GUARD_SENSITIVITY, sensitivity.name)
+  }
+
+  override fun setScrollGuardAction(action: ScrollGuardAction) {
+    updateString(KEY_SCROLL_GUARD_ACTION, action.name)
+  }
+
   private fun updateBoolean(key: String, value: Boolean) {
     prefs.edit().putBoolean(key, value).apply()
     _settings.value = readSettings()
   }
 
-  private fun readSettings(): BlockerSettings =
-    BlockerSettings(
+  private fun updateString(key: String, value: String) {
+    prefs.edit().putString(key, value).apply()
+    _settings.value = readSettings()
+  }
+
+  private fun readSettings(): BlockerSettings {
+    val sensitivity =
+      prefs
+        .getString(KEY_SCROLL_GUARD_SENSITIVITY, null)
+        ?.let { raw -> runCatching { ScrollGuardSensitivity.valueOf(raw) }.getOrNull() }
+        ?: ScrollGuardSensitivity.BALANCED
+    val action =
+      prefs
+        .getString(KEY_SCROLL_GUARD_ACTION, null)
+        ?.let { raw -> runCatching { ScrollGuardAction.valueOf(raw) }.getOrNull() }
+        ?: ScrollGuardAction.BREAK_OVERLAY
+
+    return BlockerSettings(
       blockYouTubeShorts = prefs.getBoolean(KEY_BLOCK_YOUTUBE_SHORTS, true),
       blockInstagramReels = prefs.getBoolean(KEY_BLOCK_INSTAGRAM_REELS, true),
       blockTikTok = prefs.getBoolean(KEY_BLOCK_TIKTOK, true),
       blockFacebookReels = prefs.getBoolean(KEY_BLOCK_FACEBOOK_REELS, true),
       blockXShorts = prefs.getBoolean(KEY_BLOCK_X_SHORTS, true),
       debugLoggingEnabled = prefs.getBoolean(KEY_DEBUG_LOGGING_ENABLED, false),
+      continuousScrollGuardEnabled =
+        prefs.getBoolean(KEY_CONTINUOUS_SCROLL_GUARD_ENABLED, true),
+      scrollGuardSensitivity = sensitivity,
+      scrollGuardAction = action,
     )
+  }
 
   companion object {
     private const val PREFS_NAME = "nodoomscroll_prefs"
@@ -100,6 +139,9 @@ class SharedPreferencesSettingsRepository(
     private const val KEY_BLOCK_FACEBOOK_REELS = "block_facebook_reels"
     private const val KEY_BLOCK_X_SHORTS = "block_x_shorts"
     private const val KEY_DEBUG_LOGGING_ENABLED = "debug_logging_enabled"
+    private const val KEY_CONTINUOUS_SCROLL_GUARD_ENABLED = "continuous_scroll_guard_enabled"
+    private const val KEY_SCROLL_GUARD_SENSITIVITY = "scroll_guard_sensitivity"
+    private const val KEY_SCROLL_GUARD_ACTION = "scroll_guard_action"
 
     @Volatile
     private var instance: SharedPreferencesSettingsRepository? = null

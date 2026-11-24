@@ -11,11 +11,13 @@ Android cihazlarda kısa video akışlarının (**YouTube Shorts**, **Instagram 
 - **YouTube Shorts Engelleme (`com.google.android.youtube`):** Shorts oynatıcı bileşenleri ekranda görünür olduğunda `GLOBAL_ACTION_BACK` tetikler. Normal YouTube videolarını ve YouTube Music (`com.google.android.apps.youtube.music`) uygulamasını etkilemez.
 - **Instagram Reels Engelleme (`com.instagram.android`):** Reels oynatıcı bileşenlerini veya seçili Reels sekmesini algıladığında `GLOBAL_ACTION_BACK` tetikler. Ana akış, DM'ler ve Threads (`com.instagram.barcelona`) açık kalır.
 - **TikTok Engelleme (`com.zhiliaoapp.musically` / `com.ss.android.ugc.trill`):** Uygulama öne geçtiğinde `GLOBAL_ACTION_HOME` ile ana ekrana döndürür.
-- **Facebook Reels Engelleme (`com.facebook.katana` / `com.facebook.lite`):** Facebook Reels/Shorts oynatıcısını view ID, Activity sınıfı ve seçili sekme sinyalleriyle algılayıp `GLOBAL_ACTION_BACK` tetikler; normal Haber Akışı gönderilerini ve ana sayfa kartlarını etkilemez.
+- **Facebook Reels Engelleme (`com.facebook.katana` / `com.facebook.lite`):** Facebook Reels/Shorts oynatıcısını view ID, Activity sınıfı, seçili sekme, dikey sağ aksiyon çubuğu geometrisi, tam ekran oynatıcı etiketleri ve akıştan Reels tıklama sinyalleriyle algılayıp `GLOBAL_ACTION_BACK` tetikler; normal Haber Akışı gönderilerini, Hikayeleri, Profilleri ve ana sayfa Reels raflarını etkilemez.
 - **X (Twitter) Shorts Engelleme (`com.twitter.android`):** Tam ekran dikey/immersive video akışını algılayıp `GLOBAL_ACTION_BACK` tetikler; normal zaman akışı gönderileri ve satır içi videolar açık kalır.
+- **Sürekli Kaydırma Koruması (Sonsuz Kaydırma Freni):** İzlenen akışlarda durmadan aşağı kaydırmayı `Sıkı` / `Dengeli` / `Esnek` eşiklerine göre algılar; ek izin gerektirmeden (`TYPE_ACCESSIBILITY_OVERLAY`) 5 saniyelik nefes molası gösterir veya doğrudan ana ekrana döndürür.
+- **Günlük Koruma Özeti:** Kısa video engellemeleri ve kaydırma molalarını cihaz içinde yerel olarak sayar ve gece yarısı otomatik sıfırlar.
 - **Anti-Spam Soğuma Koruması (`CooldownGate`):** Platform bazlı `1200ms` cooldown ile arka arkaya tetiklenen geri atma döngülerini önler.
 - **Gizlilik Odaklı Erişilebilirlik Servisi:** `accessibility_service_config.xml` yalnızca hedef paketleri dinler; ağ izni veya veri toplama yoktur.
-- **Debug Log Modu (Kalibrasyon):** Uygulama içi anahtar açıldığında aktif pencere sınıfını, görünür bileşen `viewId` bilgilerini ve seçili sekme etiketlerini `Logcat` (`NoDoomScroll` etiketi) üzerinden incelemeyi sağlar.
+- **Debug Log Modu (Kalibrasyon):** Uygulama içi anahtar açıldığında aktif pencere sınıfını, görünür bileşen `viewId` bilgilerini, seçili sekme etiketlerini, Facebook yapısal sinyallerini ve kaydırma sayacını `Logcat` (`NoDoomScroll` etiketi) üzerinden incelemeyi sağlar.
 
 ---
 
@@ -24,10 +26,10 @@ Android cihazlarda kısa video akışlarının (**YouTube Shorts**, **Instagram 
 - **Dil & UI:** Kotlin, Jetpack Compose (Material 3)
 - **Hedef SDK'lar:** `minSdk = 26` (Android 8.0+), `compileSdk = 36`, `targetSdk = 36`, AGP `9.0.1`
 - **Paket Yapısı (`app/src/main/kotlin/com/nodoomscroll/app/`):**
-  - `blocker/` — Android framework'ünden tamamen bağımsız saf Kotlin kural motoru (`BlockRule`, `DoomScrollRuleEngine`, `CooldownGate`, `BlockerModels`)
-  - `data/` — `SharedPreferences` tabanlı reaktif + senkron ayar deposu (`BlockerSettings`, `SettingsRepository`)
-  - `service/` — `DoomScrollAccessibilityService` ve sistem ayarları yardımcısı (`AccessibilityStatusHelper`)
-  - `ui/home/` — Servis durumu, platform anahtarları ve debug modunu yöneten kontrol paneli (`HomeScreen`, `HomeViewModel`)
+  - `blocker/` — Android framework'ünden tamamen bağımsız saf Kotlin kural ve analiz motoru (`BlockRule`, `FacebookAccessibilityAnalyzer`, `ContinuousScrollTracker`, `DoomScrollRuleEngine`, `CooldownGate`, `BlockerModels`)
+  - `data/` — `SharedPreferences` tabanlı reaktif + senkron ayar ve günlük istatistik deposu (`BlockerSettings`, `SettingsRepository`, `ProtectionStats`, `StatsRepository`)
+  - `service/` — `DoomScrollAccessibilityService`, `ScrollBreakOverlayController` ve sistem ayarları yardımcısı (`AccessibilityStatusHelper`)
+  - `ui/home/` — Servis durumu, günlük koruma özeti, platform/sürekli kaydırma ayarları ve debug modunu yöneten kontrol paneli (`HomeScreen`, `HomeViewModel`)
 
 ---
 
@@ -65,5 +67,5 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 - [x] **Faz 0:** Proje iskeleti ve ilk derleme doğrulaması
 - [x] **Faz 1:** Çekirdek kural motoru, `DoomScrollAccessibilityService`, kontrol paneli ve adaptif uygulama logosu
-- [ ] **Faz 2:** Gerçek cihaz kalibrasyonu (güncel YouTube/Instagram sürümlerine göre `viewId` doğrulaması ve edge-case temizliği)
-- [ ] **Faz 3:** Günlük engelleme sayacı, isteğe bağlı mola/uyarı ekranı ve pil optimizasyonu yönlendirmesi
+- [x] **Faz 2:** Gerçek cihaz kalibrasyonu (Facebook feed içi Reels tespiti ve edge-case temizliği)
+- [x] **Faz 3:** Günlük engelleme sayacı ve sürekli kaydırma mola ekranı (`TYPE_ACCESSIBILITY_OVERLAY`)
