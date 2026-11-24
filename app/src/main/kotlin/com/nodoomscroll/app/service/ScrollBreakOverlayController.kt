@@ -7,10 +7,12 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -31,6 +33,7 @@ class ScrollBreakOverlayController(
 
   private var overlayView: View? = null
   private var countdownRunnable: Runnable? = null
+  private var shownAtUptimeMs: Long = 0L
 
   @Volatile
   var targetPackage: String? = null
@@ -38,6 +41,13 @@ class ScrollBreakOverlayController(
 
   val isShowing: Boolean
     get() = overlayView != null
+
+  fun elapsedShownMs(): Long =
+    if (isShowing && shownAtUptimeMs > 0L) {
+      (SystemClock.uptimeMillis() - shownAtUptimeMs).coerceAtLeast(0L)
+    } else {
+      0L
+    }
 
   fun show(
     packageName: String,
@@ -60,6 +70,15 @@ class ScrollBreakOverlayController(
           }
           return super.dispatchKeyEvent(event)
         }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+          if (event.action == MotionEvent.ACTION_UP) {
+            performClick()
+          }
+          return true
+        }
+
+        override fun performClick(): Boolean = super.performClick()
       }.apply {
         setBackgroundColor(COLOR_SCRIM)
         isClickable = true
@@ -218,6 +237,7 @@ class ScrollBreakOverlayController(
       wm.addView(root, layoutParams)
       overlayView = root
       targetPackage = packageName
+      shownAtUptimeMs = SystemClock.uptimeMillis()
       root.requestFocus()
       startSnoozeCountdown(snoozeButton)
       true
@@ -225,6 +245,7 @@ class ScrollBreakOverlayController(
       Log.w(DoomScrollAccessibilityService.TAG, "Failed to display break overlay: ${ex.message}")
       overlayView = null
       targetPackage = null
+      shownAtUptimeMs = 0L
       false
     }
   }
@@ -232,6 +253,7 @@ class ScrollBreakOverlayController(
   fun dismiss() {
     countdownRunnable?.let { mainHandler.removeCallbacks(it) }
     countdownRunnable = null
+    shownAtUptimeMs = 0L
     val view = overlayView
     overlayView = null
     targetPackage = null

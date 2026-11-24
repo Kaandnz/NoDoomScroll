@@ -13,6 +13,7 @@ import com.nodoomscroll.app.data.SharedPreferencesSettingsRepository
 import com.nodoomscroll.app.data.SharedPreferencesStatsRepository
 import com.nodoomscroll.app.data.StatsRepository
 import com.nodoomscroll.app.service.AccessibilityStatusHelper
+import com.nodoomscroll.app.service.DebugDiagnosticsLog
 import com.nodoomscroll.app.service.DoomScrollAccessibilityService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +28,7 @@ data class HomeUiState(
   val isServiceEnabled: Boolean = false,
   val settings: BlockerSettings = BlockerSettings(),
   val stats: ProtectionStats = ProtectionStats(),
+  val debugLogs: List<String> = emptyList(),
 )
 
 /**
@@ -36,16 +38,24 @@ class HomeViewModel(
   private val settingsRepository: SettingsRepository,
   private val statsRepository: StatsRepository,
   private val serviceEnabledProvider: () -> Boolean,
+  private val debugLogsFlow: StateFlow<List<String>> = DebugDiagnosticsLog.logs,
+  private val clearDebugLogsAction: () -> Unit = DebugDiagnosticsLog::clear,
 ) : ViewModel() {
 
   private val isServiceEnabled = MutableStateFlow(serviceEnabledProvider())
 
   val uiState: StateFlow<HomeUiState> =
-    combine(isServiceEnabled, settingsRepository.settings, statsRepository.stats) {
+    combine(isServiceEnabled, settingsRepository.settings, statsRepository.stats, debugLogsFlow) {
         enabled,
         settings,
-        stats ->
-        HomeUiState(isServiceEnabled = enabled, settings = settings, stats = stats)
+        stats,
+        debugLogs ->
+        HomeUiState(
+          isServiceEnabled = enabled,
+          settings = settings,
+          stats = stats,
+          debugLogs = debugLogs,
+        )
       }
       .stateIn(
         scope = viewModelScope,
@@ -55,6 +65,7 @@ class HomeViewModel(
             isServiceEnabled = isServiceEnabled.value,
             settings = settingsRepository.currentSettings(),
             stats = statsRepository.currentStats(),
+            debugLogs = debugLogsFlow.value,
           ),
       )
 
@@ -85,6 +96,13 @@ class HomeViewModel(
 
   fun onToggleDebugLogging(enabled: Boolean) {
     settingsRepository.setDebugLoggingEnabled(enabled)
+    if (!enabled) {
+      clearDebugLogsAction()
+    }
+  }
+
+  fun onClearDebugLogs() {
+    clearDebugLogsAction()
   }
 
   fun onToggleContinuousScrollGuard(enabled: Boolean) {

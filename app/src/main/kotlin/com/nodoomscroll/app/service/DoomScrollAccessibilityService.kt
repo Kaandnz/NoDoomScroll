@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.nodoomscroll.app.blocker.BlockAction
 import com.nodoomscroll.app.blocker.BlockRule
 import com.nodoomscroll.app.blocker.ContinuousScrollTracker
@@ -18,6 +19,7 @@ import com.nodoomscroll.app.blocker.FacebookViewerSignals
 import com.nodoomscroll.app.blocker.InstagramReelsRule
 import com.nodoomscroll.app.blocker.NodeBounds
 import com.nodoomscroll.app.blocker.ObservedNode
+import com.nodoomscroll.app.blocker.OverlayEventGuard
 import com.nodoomscroll.app.blocker.Platform
 import com.nodoomscroll.app.blocker.ScreenSnapshot
 import com.nodoomscroll.app.blocker.ScrollEvent
@@ -56,10 +58,31 @@ class DoomScrollAccessibilityService : AccessibilityService() {
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     ensureDependencies()
 
+    val ownPackage = applicationContext.packageName
+    val eventPackage = event?.packageName?.toString()
     val activeRoot = rootInActiveWindow
+    val activeRootPackage = activeRoot?.packageName?.toString()
+
+    if (scrollBreakOverlay.isShowing) {
+      val shouldDismiss =
+        OverlayEventGuard.shouldDismissOverlay(
+          isWindowStateChanged = event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+          eventPackage = eventPackage,
+          ownPackage = ownPackage,
+          targetPackage = scrollBreakOverlay.targetPackage,
+          watchedPackages = ruleEngine.watchedPackages,
+          elapsedShownMs = scrollBreakOverlay.elapsedShownMs(),
+        )
+      if (shouldDismiss) {
+        scrollBreakOverlay.dismiss()
+      } else {
+        return
+      }
+    }
+
     val packageName =
-      activeRoot?.packageName?.toString()
-        ?: event?.packageName?.toString()
+      activeRootPackage?.takeIf { it != ownPackage }
+        ?: eventPackage?.takeIf { it != ownPackage }
         ?: return
 
     if (packageName != lastWindowPackage) {
@@ -67,13 +90,10 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       lastWindowClassName = ""
       lastFacebookReelClickUptimeMs = 0L
       scrollTracker.onForegroundPackageChanged(packageName)
-      if (scrollBreakOverlay.isShowing && scrollBreakOverlay.targetPackage != packageName) {
-        scrollBreakOverlay.dismiss()
-      }
     }
     if (
       event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-        (event.packageName == null || event.packageName.toString() == packageName)
+        (eventPackage == null || eventPackage == packageName)
     ) {
       lastWindowClassName = event.className?.toString().orEmpty()
     }
@@ -86,7 +106,7 @@ class DoomScrollAccessibilityService : AccessibilityService() {
         packageName in FacebookReelsRule.supportedPackages &&
         settings.blockFacebookReels
     ) {
-      recordFacebookFeedClickIfRelevant(event)
+      recordFacebookFeedClickIfRelevant(event, settings.debugLoggingEnabled)
     }
 
     val matchingRules = ruleEngine.rulesForPackage(packageName)
@@ -110,7 +130,11 @@ class DoomScrollAccessibilityService : AccessibilityService() {
           if (ok) {
             statsRepository.recordShortVideoBlock()
           }
-          Log.i(TAG, "Blocked ${decision.platform} (${decision.reason}) action=BACK ok=$ok")
+          val logMsg = "Blocked ${decision.platform} (${decision.reason}) action=BACK ok=$ok"
+          Log.i(TAG, logMsg)
+          if (settings.debugLoggingEnabled) {
+            DebugDiagnosticsLog.append(logMsg)
+          }
           return
         }
         BlockAction.NAVIGATE_HOME -> {
@@ -120,7 +144,11 @@ class DoomScrollAccessibilityService : AccessibilityService() {
           }
           scrollTracker.resetSession()
           scrollBreakOverlay.dismiss()
-          Log.i(TAG, "Blocked ${decision.platform} (${decision.reason}) action=HOME ok=$ok")
+          val logMsg = "Blocked ${decision.platform} (${decision.reason}) action=HOME ok=$ok"
+          Log.i(TAG, logMsg)
+          if (settings.debugLoggingEnabled) {
+            DebugDiagnosticsLog.append(logMsg)
+          }
           return
         }
         BlockAction.NONE -> {
@@ -174,7 +202,10 @@ class DoomScrollAccessibilityService : AccessibilityService() {
     }
   }
 
-  private fun recordFacebookFeedClickIfRelevant(event: AccessibilityEvent) {
+  private fun recordFacebookFeedClickIfRelevant(
+    event: AccessibilityEvent,
+    debugLoggingEnabled: Boolean,
+  ) {
     val selfLabels = mutableListOf<String>()
     val contextLabels = mutableListOf<String>()
 
@@ -193,6 +224,18 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       while (ancestor != null && ancestorSteps < MAX_CLICK_ANCESTOR_STEPS) {
         ancestor.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { contextLabels.add(it) }
         ancestor.text?.toString()?.takeIf { it.isNotBlank() }?.let { contextLabels.add(it) }
+        if (
+          ancestorSteps == 0 &&
+            !ancestor.isScrollable &&
+            ancestor.childCount <= MAX_CLICK_SIBLING_CONTAINER_CHILDREN
+        ) {
+          for (i in 0 until ancestor.childCount) {
+            val sibling = ancestor.getChild(i) ?: continue
+            if (!sibling.isVisibleToUser) continue
+            sibling.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { contextLabels.add(it) }
+            sibling.text?.toString()?.takeIf { it.isNotBlank() }?.let { contextLabels.add(it) }
+          }
+        }
         ancestor = ancestor.parent
         ancestorSteps++
       }
@@ -202,6 +245,11 @@ class DoomScrollAccessibilityService : AccessibilityService() {
 
     if (FacebookAccessibilityAnalyzer.isFeedReelClick(selfLabels, contextLabels)) {
       lastFacebookReelClickUptimeMs = SystemClock.uptimeMillis()
+      if (debugLoggingEnabled) {
+        DebugDiagnosticsLog.append(
+          "FB feedReelClick self=${selfLabels.take(2)} ctx=${contextLabels.take(3)}",
+        )
+      }
     }
   }
 
@@ -248,12 +296,14 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       ) ?: return
 
     statsRepository.recordScrollBreak()
-    Log.i(
-      TAG,
-      "Continuous scroll break pkg=$packageName swipes=${intervention.swipeCount} " +
-        "durationMs=${intervention.sessionDurationMs} reason=${intervention.triggerReason} " +
-        "action=${settings.scrollGuardAction}",
-    )
+    val scrollLogMsg =
+      "ScrollBreak $packageName swipes=${intervention.swipeCount} " +
+        "${intervention.sessionDurationMs / 1000L}s reason=${intervention.triggerReason} " +
+        "mode=${settings.scrollGuardAction}"
+    Log.i(TAG, scrollLogMsg)
+    if (settings.debugLoggingEnabled) {
+      DebugDiagnosticsLog.append(scrollLogMsg)
+    }
 
     when (settings.scrollGuardAction) {
       ScrollGuardAction.NAVIGATE_HOME -> {
@@ -304,7 +354,9 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       )
     }
 
-    val root = activeRoot ?: event?.source
+    val root =
+      findTopApplicationRoot(packageName = packageName, activeRoot = activeRoot)
+        ?: event?.source?.takeIf { it.packageName?.toString() == packageName }
     val visibleViewIds =
       if (root == null) {
         linkedSetOf()
@@ -352,6 +404,15 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       }
 
     if (debugLoggingEnabled) {
+      val facebookLabelSummary =
+        if (isFacebook && scanResult != null) {
+          FacebookAccessibilityAnalyzer.summarizeVisibleLabels(
+            nodes = scanResult.observedNodes,
+            screenBounds = scanResult.screenBounds,
+          )
+        } else {
+          emptyList()
+        }
       logDebugInspection(
         packageName = packageName,
         event = event,
@@ -359,6 +420,7 @@ class DoomScrollAccessibilityService : AccessibilityService() {
         selectedTabHints = selectedTabHints,
         selectedLabels = scanResult?.selectedLabels.orEmpty(),
         facebookViewerSignals = if (isFacebook) facebookViewerSignals else null,
+        facebookLabelSummary = facebookLabelSummary,
         scrollSession = scrollTracker.currentSession(),
       )
     }
@@ -370,6 +432,23 @@ class DoomScrollAccessibilityService : AccessibilityService() {
       windowClassName = lastWindowClassName,
       facebookViewerSignals = facebookViewerSignals,
     )
+  }
+
+  private fun findTopApplicationRoot(
+    packageName: String,
+    activeRoot: AccessibilityNodeInfo?,
+  ): AccessibilityNodeInfo? {
+    val topWindowRoot =
+      runCatching { windows }
+        .getOrNull()
+        ?.asSequence()
+        ?.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        ?.sortedByDescending { it.layer }
+        ?.mapNotNull { it.root }
+        ?.firstOrNull { it.packageName?.toString() == packageName }
+
+    if (topWindowRoot != null) return topWindowRoot
+    return activeRoot?.takeIf { it.packageName?.toString() == packageName }
   }
 
   private fun hasVisibleNode(root: AccessibilityNodeInfo, viewId: String): Boolean {
@@ -389,6 +468,7 @@ class DoomScrollAccessibilityService : AccessibilityService() {
     selectedTabHints: Set<String>,
     selectedLabels: List<String>,
     facebookViewerSignals: FacebookViewerSignals?,
+    facebookLabelSummary: List<String>,
     scrollSession: ScrollSessionSnapshot,
   ) {
     val now = SystemClock.uptimeMillis()
@@ -397,32 +477,33 @@ class DoomScrollAccessibilityService : AccessibilityService() {
 
     val fbPart =
       if (facebookViewerSignals != null) {
-        " fbSignals=(feedTab=${facebookViewerSignals.hasMainFeedTabBar}," +
-          "profileTabs=${facebookViewerSignals.hasProfileSubTabs}," +
+        " fb=(feed=${facebookViewerSignals.hasMainFeedTabBar}," +
+          "back=${facebookViewerSignals.hasTopLeftBackButton}," +
+          "prof=${facebookViewerSignals.hasProfileSubTabs}," +
           "rail=${facebookViewerSignals.hasVerticalRightActionRail}," +
-          "explicit=${facebookViewerSignals.explicitReelViewerLabels}," +
-          "support=${facebookViewerSignals.supportingReelLabels}," +
+          "exp=${facebookViewerSignals.explicitReelViewerLabels}," +
+          "sup=${facebookViewerSignals.supportingReelLabels}," +
           "ctrl=${facebookViewerSignals.hasPlayerOrEngagementControl}," +
-          "click=${facebookViewerSignals.recentFeedReelClick})"
+          "clk=${facebookViewerSignals.recentFeedReelClick}," +
+          "lbl=$facebookLabelSummary)"
       } else {
         ""
       }
 
     val scrollPart =
       if (scrollSession.swipeCount > 0) {
-        " scroll=(pkg=${scrollSession.packageName},swipes=${scrollSession.swipeCount}," +
-          "sec=${scrollSession.sessionDurationMs / 1000L})"
+        " scroll=(${scrollSession.swipeCount}/${scrollSession.sessionDurationMs / 1000L}s)"
       } else {
         ""
       }
 
-    Log.d(
-      TAG,
-      "Inspect pkg=$packageName cls=$lastWindowClassName event=${event?.eventType} " +
-        "visibleIds=$visibleIds selectedLabels=$selectedLabels selectedHints=$selectedTabHints" +
+    val line =
+      "pkg=$packageName cls=$lastWindowClassName ev=${event?.eventType} " +
+        "ids=${visibleIds.take(8)} sel=$selectedLabels hints=$selectedTabHints" +
         fbPart +
-        scrollPart,
-    )
+        scrollPart
+    Log.d(TAG, "Inspect $line")
+    DebugDiagnosticsLog.append(line)
   }
 
   private fun scanVisibleWindow(
@@ -496,7 +577,7 @@ class DoomScrollAccessibilityService : AccessibilityService() {
 
       if (depth >= maxDepth) continue
       if (depth > 1 && !isVisible) continue
-      for (i in 0 until node.childCount) {
+      for (i in (node.childCount - 1) downTo 0) {
         val child = node.getChild(i) ?: continue
         queue.addLast(child to (depth + 1))
       }
@@ -577,12 +658,13 @@ class DoomScrollAccessibilityService : AccessibilityService() {
     private const val MAX_TAB_LABEL_LENGTH: Int = 30
     private const val DEFAULT_MAX_SCAN_DEPTH: Int = 16
     private const val DEFAULT_MAX_SCAN_NODES: Int = 180
-    private const val FACEBOOK_MAX_SCAN_DEPTH: Int = 24
-    private const val FACEBOOK_MAX_SCAN_NODES: Int = 320
+    private const val FACEBOOK_MAX_SCAN_DEPTH: Int = 30
+    private const val FACEBOOK_MAX_SCAN_NODES: Int = 450
     private const val FEED_REEL_CLICK_WINDOW_MS: Long = 3500L
-    private const val MAX_CLICK_ANCESTOR_STEPS: Int = 2
-    private const val MAX_CLICK_CHILD_DEPTH: Int = 2
-    private const val MAX_CLICK_CHILD_NODES: Int = 8
+    private const val MAX_CLICK_ANCESTOR_STEPS: Int = 5
+    private const val MAX_CLICK_SIBLING_CONTAINER_CHILDREN: Int = 8
+    private const val MAX_CLICK_CHILD_DEPTH: Int = 4
+    private const val MAX_CLICK_CHILD_NODES: Int = 20
     private val X_VIDEO_TAB_LABELS: Set<String> =
       setOf("video", "videos", "videolar", "video tab", "videolar sekmesi")
 

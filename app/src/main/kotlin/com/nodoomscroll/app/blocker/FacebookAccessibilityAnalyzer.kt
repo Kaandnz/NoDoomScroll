@@ -45,6 +45,25 @@ object FacebookAccessibilityAnalyzer {
 
   private val whitespaceRegex = Regex("\\s+")
   private val reelWordRegex = Regex("\\breels?\\b")
+  private val likeCounterRegex =
+    Regex("^[0-9.,\\s]+(?:[kmb]|bin)?\\s*(?:likes?|beğeni|begeni|beğenme|begenme)(?:$|[\\s,.(:])")
+  private val commentCounterRegex =
+    Regex("^[0-9.,\\s]+(?:[kmb]|bin)?\\s*(?:comments?|yorumlar?|yorum)(?:$|[\\s,.(:])")
+  private val shareCounterRegex =
+    Regex("^[0-9.,\\s]+(?:[kmb]|bin)?\\s*(?:shares?|paylaşim|paylasim|paylaş|paylas|gönder|gonder)(?:$|[\\s,.(:])")
+
+  private val topLeftBackLabels =
+    setOf(
+      "back",
+      "navigate up",
+      "geri",
+      "geri git",
+      "geri dön",
+      "geri don",
+      "yukarı git",
+      "yukari git",
+      "go back",
+    )
 
   private val nonReelsSelectedMainTabs =
     setOf(
@@ -62,7 +81,7 @@ object FacebookAccessibilityAnalyzer {
       "akış",
       "ana sayfa",
       "haber kaynagi",
-      "haber kaynağı",
+      "haber kaynaği",
       "arkadaslar",
       "arkadaşlar",
       "bildirimler",
@@ -74,7 +93,7 @@ object FacebookAccessibilityAnalyzer {
   private val mainNavCategoryKeywords: List<Pair<MainNavCategory, Set<String>>> =
     listOf(
       MainNavCategory.HOME_FEED to
-        setOf("feed", "home", "news feed", "akış", "akis", "ana sayfa", "haber kaynağı", "haber kaynagi"),
+        setOf("feed", "home", "news feed", "akış", "akis", "ana sayfa", "haber kaynaği", "haber kaynagi"),
       MainNavCategory.FRIENDS to setOf("friends", "arkadaşlar", "arkadaslar"),
       MainNavCategory.MARKETPLACE to setOf("marketplace"),
       MainNavCategory.NOTIFICATIONS to setOf("notifications", "bildirimler"),
@@ -99,6 +118,12 @@ object FacebookAccessibilityAnalyzer {
       "unlike",
       "beğen",
       "begen",
+      "beğeni",
+      "begeni",
+      "beğenme",
+      "begenme",
+      "beğenmek",
+      "begenmek",
       "beğenmekten vazgeç",
       "begenmekten vazgec",
       "react",
@@ -111,15 +136,21 @@ object FacebookAccessibilityAnalyzer {
       "reels videosunu beğen",
       "reels videosunu begen",
     )
-  private val likeExclusions = listOf("more like this", "bunun gibi")
+  private val likeContainsPhrases =
+    listOf("double tap to like", "beğenmek için", "begenmek icin")
+  private val likeExclusions =
+    listOf("more like this", "bunun gibi", "like page", "sayfayi beğen", "sayfayi begen")
 
   private val commentPrefixes =
     setOf(
       "comment",
       "comments",
       "yorum",
-      "yorum yap",
       "yorumlar",
+      "yorumları",
+      "yorumlari",
+      "yorum yap",
+      "yorum ekle",
       "comment button",
       "yorum düğmesi",
       "yorum dugmesi",
@@ -131,8 +162,11 @@ object FacebookAccessibilityAnalyzer {
   private val sharePrefixes =
     setOf(
       "share",
+      "shares",
       "paylaş",
       "paylas",
+      "paylaşim",
+      "paylasim",
       "send",
       "gönder",
       "gonder",
@@ -156,13 +190,18 @@ object FacebookAccessibilityAnalyzer {
       "daha fazla secenek",
       "more",
       "daha fazla",
+      "diğer",
+      "diger",
       "save",
       "kaydet",
+      "kaydedilen",
       "save reel",
       "reels videosunu kaydet",
       "options",
       "seçenekler",
       "secenekler",
+      "menü",
+      "menu",
     )
 
   private val audioPrefixes =
@@ -171,12 +210,16 @@ object FacebookAccessibilityAnalyzer {
       "original audio",
       "orijinal ses",
       "ses",
+      "sesi",
+      "ses parçasi",
+      "ses parcasi",
       "ses sayfası",
       "ses sayfasi",
       "music",
       "müzik",
       "muzik",
       "remix",
+      "remiks",
       "remiksle",
     )
 
@@ -194,12 +237,9 @@ object FacebookAccessibilityAnalyzer {
       "sessize al",
     )
 
-  private val explicitReelViewerPhrases =
+  private val unconditionalExplicitReelPhrases =
     listOf(
       "pause reel",
-      "play reel",
-      "mute reel",
-      "unmute reel",
       "like reel",
       "unlike reel",
       "comment on reel",
@@ -214,7 +254,6 @@ object FacebookAccessibilityAnalyzer {
       "next reel",
       "swipe up for next reel",
       "reels videosunu duraklat",
-      "reels videosunu oynat",
       "reels videosunu beğen",
       "reels videosunu begen",
       "reels videosuna yorum",
@@ -228,6 +267,14 @@ object FacebookAccessibilityAnalyzer {
       "bu reels videosunu remiksle",
       "reels remiksle",
       "sonraki reels",
+    )
+
+  private val viewerOnlyExplicitReelPhrases =
+    listOf(
+      "play reel",
+      "mute reel",
+      "unmute reel",
+      "reels videosunu oynat",
     )
 
   private val originalAudioPhrases =
@@ -309,11 +356,13 @@ object FacebookAccessibilityAnalyzer {
     recentFeedReelClick: Boolean = false,
   ): FacebookViewerSignals {
     var hasSelectedNonReelsMainTab = false
+    var hasTopLeftBackButton = false
     val topBarNavCategories = linkedSetOf<MainNavCategory>()
     val bottomBarNavCategories = linkedSetOf<MainNavCategory>()
     val profileSubTabCategories = linkedSetOf<ProfileSubTabCategory>()
     val railCandidatesBySlot = ActionSlot.entries.associateWith { mutableListOf<RailCandidate>() }
     val explicitLabels = linkedSetOf<String>()
+    val unconditionalExplicitLabels = linkedSetOf<String>()
     val supportingLabels = linkedSetOf<String>()
     var hasPlayerOrEngagementControl = false
 
@@ -329,6 +378,17 @@ object FacebookAccessibilityAnalyzer {
           .distinct()
 
       for (label in normalizedLabels) {
+        if (
+          label.length <= 30 &&
+            screenBounds.isValid &&
+            node.bounds.isValid &&
+            node.bounds.centerX <= screenBounds.left + (screenBounds.width * 0.30).toInt() &&
+            node.bounds.centerY <= screenBounds.top + (screenBounds.height * 0.18).toInt() &&
+            topLeftBackLabels.any { matchesTokenPrefix(label, it) }
+        ) {
+          hasTopLeftBackButton = true
+        }
+
         if (label.length <= 45) {
           if (node.isSelected && nonReelsSelectedMainTabs.any { matchesTokenPrefix(label, it) }) {
             hasSelectedNonReelsMainTab = true
@@ -358,10 +418,17 @@ object FacebookAccessibilityAnalyzer {
         }
 
         if (label.length <= 80) {
-          val explicitMatch = explicitReelViewerPhrases.firstOrNull { label.contains(it) }
-          if (explicitMatch != null) {
-            explicitLabels.add(explicitMatch)
+          val unconditionalMatch = unconditionalExplicitReelPhrases.firstOrNull { label.contains(it) }
+          if (unconditionalMatch != null) {
+            unconditionalExplicitLabels.add(unconditionalMatch)
+            explicitLabels.add(unconditionalMatch)
             hasPlayerOrEngagementControl = true
+          } else {
+            val viewerOnlyMatch = viewerOnlyExplicitReelPhrases.firstOrNull { label.contains(it) }
+            if (viewerOnlyMatch != null) {
+              explicitLabels.add(viewerOnlyMatch)
+              hasPlayerOrEngagementControl = true
+            }
           }
 
           if (originalAudioPhrases.any { label.contains(it) }) {
@@ -420,13 +487,48 @@ object FacebookAccessibilityAnalyzer {
 
     return FacebookViewerSignals(
       hasMainFeedTabBar = hasMainFeedTabBar,
+      hasTopLeftBackButton = hasTopLeftBackButton,
       hasProfileSubTabs = hasProfileSubTabs,
       hasVerticalRightActionRail = hasVerticalRightActionRail,
       explicitReelViewerLabels = explicitLabels,
+      unconditionalExplicitReelLabels = unconditionalExplicitLabels,
       supportingReelLabels = supportingLabels,
       hasPlayerOrEngagementControl = hasPlayerOrEngagementControl,
       recentFeedReelClick = recentFeedReelClick,
     )
+  }
+
+  /**
+   * Formats short visible Facebook labels with screen-percentage coordinates for Debug Log Mode.
+   */
+  fun summarizeVisibleLabels(
+    nodes: List<ObservedNode>,
+    screenBounds: NodeBounds,
+    maxItems: Int = 14,
+  ): List<String> {
+    val result = linkedSetOf<String>()
+    for (node in nodes) {
+      if (result.size >= maxItems) break
+      val raw =
+        node.contentDescription.takeIf { it.isNotBlank() }
+          ?: node.text.takeIf { it.isNotBlank() }
+          ?: continue
+      val compact = raw.trim().replace(whitespaceRegex, " ")
+      if (compact.isEmpty() || compact.length > 35) continue
+
+      val formatted =
+        if (screenBounds.isValid && node.bounds.isValid) {
+          val xPct =
+            ((node.bounds.centerX - screenBounds.left) * 100) / screenBounds.width.coerceAtLeast(1)
+          val yPct =
+            ((node.bounds.centerY - screenBounds.top) * 100) / screenBounds.height.coerceAtLeast(1)
+          "$compact@${xPct}%,${yPct}%"
+        } else {
+          compact
+        }
+      result.add(formatted)
+    }
+    return result.toList()
   }
 
   /**
@@ -451,16 +553,26 @@ object FacebookAccessibilityAnalyzer {
   }
 
   private fun classifyActionSlot(label: String): ActionSlot? {
-    if (likeExclusions.none { label.contains(it) } && likePrefixes.any { matchesTokenPrefix(label, it) }) {
+    if (
+      likeExclusions.none { label.contains(it) } &&
+        (likePrefixes.any { matchesTokenPrefix(label, it) } ||
+          likeCounterRegex.containsMatchIn(label) ||
+          likeContainsPhrases.any { label.contains(it) })
+    ) {
       return ActionSlot.LIKE
     }
     if (
       commentExclusions.none { label.contains(it) } &&
-        commentPrefixes.any { matchesTokenPrefix(label, it) }
+        (commentPrefixes.any { matchesTokenPrefix(label, it) } ||
+          commentCounterRegex.containsMatchIn(label))
     ) {
       return ActionSlot.COMMENT
     }
-    if (shareExclusions.none { label.contains(it) } && sharePrefixes.any { matchesTokenPrefix(label, it) }) {
+    if (
+      shareExclusions.none { label.contains(it) } &&
+        (sharePrefixes.any { matchesTokenPrefix(label, it) } ||
+          shareCounterRegex.containsMatchIn(label))
+    ) {
       return ActionSlot.SHARE
     }
     if (saveOrMorePrefixes.any { matchesTokenPrefix(label, it) }) {
@@ -478,7 +590,7 @@ object FacebookAccessibilityAnalyzer {
   ): Boolean {
     if (!screenBounds.isValid || !bounds.isValid) return false
     val maxWidth = (screenBounds.width * 0.45).toInt()
-    val minCenterX = screenBounds.left + (screenBounds.width * 0.68).toInt()
+    val minCenterX = screenBounds.left + (screenBounds.width * 0.65).toInt()
     val minCenterY = screenBounds.top + (screenBounds.height * 0.25).toInt()
     return bounds.width <= maxWidth && bounds.centerX >= minCenterX && bounds.centerY >= minCenterY
   }
@@ -490,9 +602,9 @@ object FacebookAccessibilityAnalyzer {
     val populatedSlots = ActionSlot.entries.filter { candidatesBySlot.getValue(it).isNotEmpty() }
     if (populatedSlots.size < 3) return false
 
-    val maxDeltaX = (screenBounds.width * 0.22).toInt()
+    val maxDeltaX = (screenBounds.width * 0.25).toInt()
     val minSpanY = (screenBounds.height * 0.08).toInt()
-    val minPairStepY = (screenBounds.height * 0.03).toInt()
+    val minPairStepY = (screenBounds.height * 0.025).toInt()
 
     for (i in 0 until populatedSlots.size - 2) {
       for (j in i + 1 until populatedSlots.size - 1) {

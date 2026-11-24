@@ -64,9 +64,11 @@ data class ObservedNode(
  */
 data class FacebookViewerSignals(
   val hasMainFeedTabBar: Boolean = false,
+  val hasTopLeftBackButton: Boolean = false,
   val hasProfileSubTabs: Boolean = false,
   val hasVerticalRightActionRail: Boolean = false,
   val explicitReelViewerLabels: Set<String> = emptySet(),
+  val unconditionalExplicitReelLabels: Set<String> = emptySet(),
   val supportingReelLabels: Set<String> = emptySet(),
   val hasPlayerOrEngagementControl: Boolean = false,
   val recentFeedReelClick: Boolean = false,

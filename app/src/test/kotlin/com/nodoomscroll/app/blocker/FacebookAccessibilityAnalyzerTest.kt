@@ -268,4 +268,141 @@ class FacebookAccessibilityAnalyzerTest {
     assertEquals(BlockAction.NAVIGATE_BACK, decision.action)
     assertEquals("facebook:feedReelClick", decision.reason)
   }
+
+  @Test
+  fun occludedHomeFeedTabBarUnderneathReelsViewer_stillBlocksVerticalRailAndPushedBackButton() {
+    val occludedTabsPlusRail =
+      listOf(
+        ObservedNode(contentDescription = "Ana Sayfa", isSelected = true, bounds = NodeBounds(0, 120, 180, 220)),
+        ObservedNode(contentDescription = "Arkadaşlar", bounds = NodeBounds(180, 120, 360, 220)),
+        ObservedNode(contentDescription = "Bildirimler", bounds = NodeBounds(720, 120, 900, 220)),
+        ObservedNode(contentDescription = "12,4 B beğeni", bounds = NodeBounds(860, 1300, 1050, 1410)),
+        ObservedNode(contentDescription = "345 yorum", bounds = NodeBounds(860, 1480, 1050, 1590)),
+        ObservedNode(contentDescription = "89 paylaşım", bounds = NodeBounds(860, 1660, 1050, 1770)),
+      )
+    val railSignals = FacebookAccessibilityAnalyzer.analyze(occludedTabsPlusRail, phoneBounds)
+    assertTrue(railSignals.hasMainFeedTabBar)
+    assertTrue(railSignals.hasVerticalRightActionRail)
+    val railDecision =
+      engine.evaluate(
+        ScreenSnapshot(packageName = "com.facebook.katana", facebookViewerSignals = railSignals),
+        BlockerSettings(),
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, railDecision.action)
+    assertEquals("facebook:verticalRightRail", railDecision.reason)
+
+    val englishCountersNodes =
+      listOf(
+        ObservedNode(contentDescription = "12.4K likes", bounds = NodeBounds(860, 1300, 1050, 1410)),
+        ObservedNode(contentDescription = "345 comments", bounds = NodeBounds(860, 1480, 1050, 1590)),
+        ObservedNode(contentDescription = "89 shares", bounds = NodeBounds(860, 1660, 1050, 1770)),
+      )
+    assertTrue(FacebookAccessibilityAnalyzer.analyze(englishCountersNodes, phoneBounds).hasVerticalRightActionRail)
+
+    val pushedBackWithClickEngine =
+      DoomScrollRuleEngine(cooldownGate = CooldownGate(cooldownMs = 1200L, clockMs = { 0L }))
+    val occludedTabsPlusBackClick =
+      listOf(
+        ObservedNode(contentDescription = "Ana Sayfa", isSelected = true, bounds = NodeBounds(0, 120, 180, 220)),
+        ObservedNode(contentDescription = "Geri", bounds = NodeBounds(24, 90, 140, 200)),
+        ObservedNode(contentDescription = "Beğen", bounds = NodeBounds(40, 2120, 240, 2220)),
+      )
+    val clickSignals =
+      FacebookAccessibilityAnalyzer.analyze(
+        nodes = occludedTabsPlusBackClick,
+        screenBounds = phoneBounds,
+        recentFeedReelClick = true,
+      )
+    assertTrue(clickSignals.hasTopLeftBackButton)
+    val clickDecision =
+      pushedBackWithClickEngine.evaluate(
+        ScreenSnapshot(packageName = "com.facebook.katana", facebookViewerSignals = clickSignals),
+        BlockerSettings(),
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, clickDecision.action)
+    assertEquals("facebook:feedReelClick", clickDecision.reason)
+
+    val pushedBackWithHeaderEngine =
+      DoomScrollRuleEngine(cooldownGate = CooldownGate(cooldownMs = 1200L, clockMs = { 0L }))
+    val occludedTabsPlusHeaderNodes =
+      listOf(
+        ObservedNode(contentDescription = "Ana Sayfa", isSelected = true, bounds = NodeBounds(0, 120, 180, 220)),
+        ObservedNode(contentDescription = "Geri", bounds = NodeBounds(24, 90, 140, 200)),
+        ObservedNode(text = "Reels", bounds = NodeBounds(160, 90, 340, 180)),
+        ObservedNode(text = "Orijinal ses", bounds = NodeBounds(60, 2100, 500, 2160)),
+        ObservedNode(contentDescription = "Duraklat", bounds = NodeBounds(450, 1100, 630, 1280)),
+      )
+    val headerDecision =
+      pushedBackWithHeaderEngine.evaluate(
+        ScreenSnapshot(
+          packageName = "com.facebook.katana",
+          facebookViewerSignals = FacebookAccessibilityAnalyzer.analyze(occludedTabsPlusHeaderNodes, phoneBounds),
+        ),
+        BlockerSettings(),
+      )
+    assertEquals(BlockAction.NAVIGATE_BACK, headerDecision.action)
+    assertTrue(headerDecision.reason.startsWith("facebook:viewerSignals:"))
+  }
+
+  @Test
+  fun feedPlayReelCardAndPushedPhotoViewerAndProfile_areNotBlocked() {
+    val inlinePlayReelCard =
+      listOf(
+        ObservedNode(contentDescription = "Ana Sayfa", isSelected = true, bounds = NodeBounds(0, 120, 180, 220)),
+        ObservedNode(contentDescription = "Reels videosunu oynat", bounds = NodeBounds(400, 900, 680, 1180)),
+        ObservedNode(contentDescription = "Beğen", bounds = NodeBounds(40, 1950, 300, 2040)),
+        ObservedNode(contentDescription = "Yorum yap", bounds = NodeBounds(380, 1950, 680, 2040)),
+        ObservedNode(contentDescription = "Paylaş", bounds = NodeBounds(760, 1950, 1020, 2040)),
+      )
+    assertEquals(
+      BlockAction.NONE,
+      engine.evaluate(
+        ScreenSnapshot(
+          packageName = "com.facebook.katana",
+          facebookViewerSignals = FacebookAccessibilityAnalyzer.analyze(inlinePlayReelCard, phoneBounds),
+        ),
+        BlockerSettings(),
+      ).action,
+    )
+
+    val pushedPhotoViewer =
+      listOf(
+        ObservedNode(contentDescription = "Geri", bounds = NodeBounds(24, 90, 140, 200)),
+        ObservedNode(contentDescription = "Beğen", bounds = NodeBounds(40, 2160, 320, 2260)),
+        ObservedNode(contentDescription = "Yorum", bounds = NodeBounds(380, 2160, 660, 2260)),
+        ObservedNode(contentDescription = "Paylaş", bounds = NodeBounds(720, 2160, 1020, 2260)),
+      )
+    assertEquals(
+      BlockAction.NONE,
+      engine.evaluate(
+        ScreenSnapshot(
+          packageName = "com.facebook.katana",
+          facebookViewerSignals = FacebookAccessibilityAnalyzer.analyze(pushedPhotoViewer, phoneBounds),
+        ),
+        BlockerSettings(),
+      ).action,
+    )
+
+    val pushedProfile =
+      listOf(
+        ObservedNode(contentDescription = "Geri", bounds = NodeBounds(24, 90, 140, 200)),
+        ObservedNode(text = "Gönderiler", bounds = NodeBounds(30, 820, 250, 900)),
+        ObservedNode(text = "Fotoğraflar", bounds = NodeBounds(270, 820, 520, 900)),
+      )
+    assertEquals(
+      BlockAction.NONE,
+      engine.evaluate(
+        ScreenSnapshot(
+          packageName = "com.facebook.katana",
+          facebookViewerSignals =
+            FacebookAccessibilityAnalyzer.analyze(
+              nodes = pushedProfile,
+              screenBounds = phoneBounds,
+              recentFeedReelClick = true,
+            ),
+        ),
+        BlockerSettings(),
+      ).action,
+    )
+  }
 }

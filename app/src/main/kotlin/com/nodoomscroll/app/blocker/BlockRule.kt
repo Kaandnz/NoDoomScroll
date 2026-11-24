@@ -177,8 +177,6 @@ object FacebookReelsRule : BlockRule {
     )?.let { return it }
 
     val signals = snapshot.facebookViewerSignals
-    if (signals.hasMainFeedTabBar) return null
-
     if (signals.hasVerticalRightActionRail) {
       return BlockDecision(
         action = BlockAction.NAVIGATE_BACK,
@@ -187,7 +185,19 @@ object FacebookReelsRule : BlockRule {
       )
     }
 
-    if (signals.hasProfileSubTabs) return null
+    if (!signals.hasProfileSubTabs) {
+      val unconditionalLabel = signals.unconditionalExplicitReelLabels.firstOrNull()
+      if (unconditionalLabel != null) {
+        return BlockDecision(
+          action = BlockAction.NAVIGATE_BACK,
+          platform = platform,
+          reason = "facebook:explicitLabel:$unconditionalLabel",
+        )
+      }
+    }
+
+    val isInPushedViewer = !signals.hasMainFeedTabBar || signals.hasTopLeftBackButton
+    if (!isInPushedViewer || signals.hasProfileSubTabs) return null
 
     val explicitLabel = signals.explicitReelViewerLabels.firstOrNull()
     if (explicitLabel != null) {

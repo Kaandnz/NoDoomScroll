@@ -125,6 +125,38 @@ class HomeViewModelTest {
     assertEquals(1, viewModel.uiState.value.stats.todayScrollBreaks)
     assertEquals(2, viewModel.uiState.value.stats.todayTotal)
   }
+
+  @Test
+  fun debugLogsFlow_updatesStateAndClearsOnDisableOrManualClear() {
+    val repo = FakeSettingsRepository()
+    val statsRepo = FakeStatsRepository()
+    val logsFlow = MutableStateFlow(listOf("[10:50:00] pkg=com.facebook.katana"))
+    var clearCount = 0
+    val viewModel =
+      HomeViewModel(
+        settingsRepository = repo,
+        statsRepository = statsRepo,
+        serviceEnabledProvider = { true },
+        debugLogsFlow = logsFlow,
+        clearDebugLogsAction = {
+          clearCount++
+          logsFlow.value = emptyList()
+        },
+      )
+
+    assertEquals(1, viewModel.uiState.value.debugLogs.size)
+
+    viewModel.onClearDebugLogs()
+    assertEquals(1, clearCount)
+    assertTrue(viewModel.uiState.value.debugLogs.isEmpty())
+
+    logsFlow.value = listOf("[10:51:00] test")
+    assertEquals(1, viewModel.uiState.value.debugLogs.size)
+
+    viewModel.onToggleDebugLogging(false)
+    assertEquals(2, clearCount)
+    assertTrue(viewModel.uiState.value.debugLogs.isEmpty())
+  }
 }
 
 private class FakeSettingsRepository(

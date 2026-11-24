@@ -1,6 +1,11 @@
 package com.nodoomscroll.app.ui.home
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -9,9 +14,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,16 +31,25 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,6 +59,7 @@ import com.nodoomscroll.app.data.ProtectionStats
 import com.nodoomscroll.app.data.ScrollGuardAction
 import com.nodoomscroll.app.data.ScrollGuardSensitivity
 import com.nodoomscroll.app.ui.theme.NoDoomScrollTheme
+import kotlinx.coroutines.delay
 
 /**
  * Stateful entry point that binds [HomeViewModel] and lifecycle resume refreshes to [HomeScreen].
@@ -71,6 +88,7 @@ fun HomeRoute(
     onSelectScrollGuardSensitivity = viewModel::onSelectScrollGuardSensitivity,
     onSelectScrollGuardAction = viewModel::onSelectScrollGuardAction,
     onToggleDebugLogging = viewModel::onToggleDebugLogging,
+    onClearDebugLogs = viewModel::onClearDebugLogs,
     modifier = modifier,
   )
 }
@@ -92,6 +110,7 @@ fun HomeScreen(
   onSelectScrollGuardSensitivity: (ScrollGuardSensitivity) -> Unit,
   onSelectScrollGuardAction: (ScrollGuardAction) -> Unit,
   onToggleDebugLogging: (Boolean) -> Unit,
+  onClearDebugLogs: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   Scaffold(
@@ -234,6 +253,14 @@ fun HomeScreen(
           checked = uiState.settings.debugLoggingEnabled,
           onCheckedChange = onToggleDebugLogging,
         )
+
+        if (uiState.settings.debugLoggingEnabled) {
+          HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+          DebugDiagnosticsPanel(
+            logs = uiState.debugLogs,
+            onClearLogs = onClearDebugLogs,
+          )
+        }
       }
     }
   }
@@ -461,6 +488,77 @@ private fun SettingToggleRow(
   }
 }
 
+@Composable
+private fun DebugDiagnosticsPanel(
+  logs: List<String>,
+  onClearLogs: () -> Unit,
+) {
+  val context = LocalContext.current
+  var copiedFeedback by remember { mutableStateOf(false) }
+
+  LaunchedEffect(copiedFeedback) {
+    if (copiedFeedback) {
+      delay(2000L)
+      copiedFeedback = false
+    }
+  }
+
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp, vertical = 12.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    val previewLogs = logs.takeLast(8)
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .heightIn(max = 180.dp)
+        .clip(RoundedCornerShape(10.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        .verticalScroll(rememberScrollState())
+        .padding(10.dp),
+    ) {
+      Text(
+        text =
+          if (previewLogs.isEmpty()) {
+            "Henüz kayıt yok. Facebook/Instagram açıp test ettikten sonra buraya dönebilirsin."
+          } else {
+            previewLogs.joinToString("\n")
+          },
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      OutlinedButton(
+        enabled = logs.isNotEmpty(),
+        onClick = {
+          val clipboard =
+            context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+          clipboard?.setPrimaryClip(ClipData.newPlainText("NoDoomScroll Log", logs.joinToString("\n")))
+          copiedFeedback = true
+        },
+      ) {
+        Text(text = if (copiedFeedback) "Kopyalandı" else "Logu Kopyala")
+      }
+      TextButton(
+        enabled = logs.isNotEmpty(),
+        onClick = onClearLogs,
+      ) {
+        Text(text = "Temizle")
+      }
+    }
+  }
+}
+
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun HomeScreenDisabledPreview() {
@@ -477,6 +575,7 @@ fun HomeScreenDisabledPreview() {
       onSelectScrollGuardSensitivity = {},
       onSelectScrollGuardAction = {},
       onToggleDebugLogging = {},
+      onClearDebugLogs = {},
     )
   }
 }
@@ -497,6 +596,7 @@ fun HomeScreenEnabledPreview() {
               todayScrollBreaks = 2,
               totalBlocksAllTime = 19,
             ),
+          debugLogs = listOf("[10:50:12] pkg=com.facebook.katana rail=true"),
         ),
       onOpenAccessibilitySettings = {},
       onToggleYouTubeShorts = {},
@@ -508,6 +608,7 @@ fun HomeScreenEnabledPreview() {
       onSelectScrollGuardSensitivity = {},
       onSelectScrollGuardAction = {},
       onToggleDebugLogging = {},
+      onClearDebugLogs = {},
     )
   }
 }
